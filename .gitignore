@@ -1,0 +1,19 @@
+# 复现产物（每个项目独立的工作目录，含脚本 / 日志 / 报告）
+test_*/
+log/
+*.log
+
+# 容器内取回的临时产物
+*.tmp
+*.bak
+
+# 编辑器 / 系统
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
