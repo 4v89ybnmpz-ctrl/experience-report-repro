@@ -1,6 +1,6 @@
 ---
 name: experience-report-repro
-description: "在固定昇腾NPU容器里复现JSON体验评估报告中【用户指定的某个阶段】，核实该阶段的痛点/失败结论是否成立。输入是体验agent生成的JSON体验评估报告(记录某开源项目S0搜索→S1环境准备→S2快速体验→S3开发编译→S4测试验证→S5贡献各阶段的命令轨迹actual_path.actions、痛点pain_points/failure_reason、评分)。用户指定复现哪个阶段(没问题、无需复现的阶段不指定)。核心机制:S1是环境基线——无论复现哪个阶段,都先严格按S1_SETUP阶段记录的actions把容器环境配置成与报告一致(照S1原样装,不自行补装/修正/对齐文档),其他阶段依赖这个环境;然后再逐条复现用户指定阶段的命令轨迹,捕获真实退出码、读业务输出,逐条核实该阶段痛点是否成立。复现环境固定用docker容器(镜像guoqiangqi/cogito,容器名cann_test_ml_{项目名},挂载davinci设备与Ascend driver/firmware/npu-smi等)。全程独立,只依据被复现报告+本项目文档/源码,不读workspace其他项目结果;但工具链/依赖安装的非项目耦合通用踩坑可复用。触发:用户给出JSON体验报告并要求复现/验证/核实某阶段(S2快速体验/S3编译/S4测试等)的失败结论或痛点是否成立,或要求起干净NPU容器验证某CANN/昇腾项目某阶段流程是否如报告所述。"
+description: "在固定昇腾NPU容器里复现JSON体验评估报告中【用户指定的某个阶段】，核实该阶段的痛点/失败结论是否成立。输入是体验agent生成的JSON体验评估报告(记录某开源项目S0搜索→S1环境准备→S2快速体验→S3开发编译→S4测试验证→S5贡献各阶段的命令轨迹actual_path.actions、痛点pain_points/failure_reason、评分)。用户指定复现哪个阶段(没问题、无需复现的阶段不指定)。核心机制:S1是环境基线——无论复现哪个阶段,都先严格按S1_SETUP阶段记录的actions把容器环境配置成与报告一致(照S1原样装,不自行补装/修正/对齐文档),其他阶段依赖这个环境;然后再逐条复现用户指定阶段的命令轨迹,捕获真实退出码、读业务输出,逐条核实该阶段痛点是否成立。复现环境固定用docker容器(镜像guoqiangqi/cogito,容器名cann_test_{使用者}_{项目名},挂载davinci设备与Ascend driver/firmware/npu-smi等)。全程独立,只依据被复现报告+本项目文档/源码,不读workspace其他项目结果;但工具链/依赖安装的非项目耦合通用踩坑可复用。触发:用户给出JSON体验报告并要求复现/验证/核实某阶段(S2快速体验/S3编译/S4测试等)的失败结论或痛点是否成立,或要求起干净NPU容器验证某CANN/昇腾项目某阶段流程是否如报告所述。"
 ---
 
 # 体验报告阶段复现与验证(昇腾NPU容器)
@@ -104,15 +104,16 @@ journey_map / phase_analysis   各阶段总分、pros/cons 汇总(辅助理解)
 
 ## 复现环境(固定 docker 容器)
 
-**复现一律在固定的昇腾 NPU docker 容器内进行**。容器名按项目命名:`cann_test_ml_{项目名}`,镜像固定。
+**复现一律在固定的昇腾 NPU docker 容器内进行**。容器名按项目命名:`cann_test_{使用者}_{项目名}`,镜像固定。
 
+**{使用者} 取法**:使用者自己的标识(如姓名拼音/缩写),用于区分不同人起的容器,例如 `zhangsan`。
 **{项目名} 取法**:取报告 `project.project_id` 中 `/` 后的部分(如 `cann/asc-tools` → `asc-tools`),与宿主机工作目录 `test_<项目名>` 保持一致。
 
 起容器命令(把 `{项目名}` 替换为实际项目名):
 
 ```bash
 docker run -dit \
-  --name cann_test_ml_{项目名} \
+  --name cann_test_{使用者}_{项目名} \
   --privileged \
   --net=host \
   --device /dev/davinci0 \
@@ -131,7 +132,7 @@ docker run -dit \
 ```
 
 - 镜像固定为 `guoqiangqi/cogito:202606150944`(如该 tag 拉取失败,先告知用户并确认替代 tag,**不要擅自换其它镜像**)。
-- 容器内执行统一用 `docker exec cann_test_ml_{项目名} bash -lc '<命令>'`;脚本先在宿主机 `test_<项目名>/scripts/` 写好,再 `docker cp` 进容器执行,便于审视与复用。
+- 容器内执行统一用 `docker exec cann_test_{使用者}_{项目名} bash -lc '<命令>'`;脚本先在宿主机 `test_<项目名>/scripts/` 写好,再 `docker cp` 进容器执行,便于审视与复用。
 - **宿主机↔容器文件流转**:宿主机 `test_<项目名>/` 只放脚本/日志/报告;容器内按报告记录的路径操作(如 S1 里 git clone 到 `/tmp/devx_workspace` 就照此路径)。容器内日志用 `docker exec ... > 宿主机log` 或执行后 `docker cp` 取回 `test_<项目名>/log/`。
 - 起容器后先自检 NPU 可用:`npu-smi info`(应能看到设备)与 `ls /dev/davinci*`,确认设备挂载成功,再进入复现。
 
@@ -200,7 +201,7 @@ test_<项目名>/
 #### 阶段 1｜起容器 + 自检
 
 1. `mkdir -p test_<项目名>/{scripts,log}`,输入 JSON 放 `log/`。
-2. 用上文固定 `docker run` 命令起 `cann_test_ml_{项目名}`(已存在则先 `docker rm -f` 重建,保证干净)。
+2. 用上文固定 `docker run` 命令起 `cann_test_{使用者}_{项目名}`(已存在则先 `docker rm -f` 重建,保证干净)。
 3. 自检:`npu-smi info`、`ls /dev/davinci*`、镜像内基础工具情况。自检结果记入 `log/container_check.log`。
 
 #### 阶段 2｜按 S1 配置环境(环境基线,严格按 S1 原样)
@@ -271,7 +272,7 @@ test_<项目名>/
 - 报告: <report_id> (生成于 <generated_at>)
 - 项目: <project_id> / repo <repo_url> / branch <branch>
 - 复现阶段: <step_id 阶段名>  | 环境基线: S1_SETUP
-- 容器: cann_test_ml_<项目名>  | 镜像: guoqiangqi/cogito:202606150944
+- 容器: cann_test_{使用者}_<项目名>  | 镜像: guoqiangqi/cogito:202606150944
 - 复现时间: <本次>
 
 ## 一、S1 环境基线复现(按报告 S1 严格配置)

@@ -55,7 +55,7 @@ cd experience-report-repro
 
 ## 配置
 
-SKILL.md 里以下值为默认基线，可按需替换：镜像 `guoqiangqi/cogito:202606150944`、容器名 `cann_test_ml_{项目名}`、工作目录 `test_<项目名>/`。
+SKILL.md 里以下值为默认基线，可按需替换：镜像 `guoqiangqi/cogito:202606150944`、容器名 `cann_test_{使用者}_{项目名}`（`{使用者}` 为使用者自己的标识，如姓名缩写）、工作目录 `test_<项目名>/`。
 
 ## 许可证
 
