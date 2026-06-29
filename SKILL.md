@@ -1,5 +1,6 @@
 ---
 name: experience-report-repro
+license: MIT
 description: "在固定昇腾NPU容器里复现JSON体验评估报告中【用户指定的某个阶段】，核实该阶段的痛点/失败结论是否成立。输入是体验agent生成的JSON体验评估报告(记录某开源项目S0搜索→S1环境准备→S2快速体验→S3开发编译→S4测试验证→S5贡献各阶段的命令轨迹actual_path.actions、痛点pain_points/failure_reason、评分)。用户指定复现哪个阶段(没问题、无需复现的阶段不指定)。核心机制:S1是环境基线——无论复现哪个阶段,都先严格按S1_SETUP阶段记录的actions把容器环境配置成与报告一致(照S1原样装,不自行补装/修正/对齐文档),其他阶段依赖这个环境;然后再逐条复现用户指定阶段的命令轨迹,捕获真实退出码、读业务输出,逐条核实该阶段痛点是否成立。复现环境固定用docker容器(镜像guoqiangqi/cogito,容器名cann_test_{使用者}_{项目名},挂载davinci设备与Ascend driver/firmware/npu-smi等)。全程独立,只依据被复现报告+本项目文档/源码,不读workspace其他项目结果;但工具链/依赖安装的非项目耦合通用踩坑可复用。触发:用户给出JSON体验报告并要求复现/验证/核实某阶段(S2快速体验/S3编译/S4测试等)的失败结论或痛点是否成立,或要求起干净NPU容器验证某CANN/昇腾项目某阶段流程是否如报告所述。"
 ---
 

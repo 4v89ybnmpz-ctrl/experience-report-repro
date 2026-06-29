@@ -2,11 +2,11 @@
 
 > 在固定的昇腾 NPU Docker 容器里，复现体验评估 JSON 报告中某个阶段的命令轨迹，核实报告里的痛点 / 失败结论是否真的成立。
 
-这是一个 [Claude Code](https://docs.claude.com/en/docs/claude-code) Skill。
+这是一个 [opencode](https://opencode.ai) Skill（同时兼容 Claude Code）。
 
 ## 它做什么
 
-把"体验评估 Agent"生成的 JSON 报告交给 Claude Code，并指定要复现的阶段（如"复现 S3 编译阶段"），它会：
+把"体验评估 Agent"生成的 JSON 报告交给 opencode，并指定要复现的阶段（如"复现 S3 编译阶段"），它会：
 
 1. 严格按报告 `S1_SETUP` 把容器环境配成与报告一致（环境基线）；
 2. 逐条复现指定阶段的命令轨迹，捕获真实退出码与业务输出；
@@ -18,30 +18,35 @@
 
 - 宿主机有 Ascend NPU 驱动 / firmware / `npu-smi`；
 - 可运行 Docker（需挂载 `/dev/davinci*`）；
-- 已安装 Claude Code；
+- 已安装 opencode（或 Claude Code，skill frontmatter 两者兼容）；
 - 一份体验评估 Agent 生成的 JSON 报告（结构见 [SKILL.md](SKILL.md)「JSON 报告结构速查」）。
 
 ## 安装
 
+仓库内已自带 `.opencode/skills/experience-report-repro/` 软链指向根 `SKILL.md`——**在本仓库里直接用 opencode 即可自动加载，无需运行安装脚本**。要在别的项目 / 全局使用，再运行：
+
 ```bash
 git clone <repo-url> experience-report-repro
 cd experience-report-repro
-./install.sh            # 安装为用户级 skill（~/.claude/skills/experience-report-repro/）
+./install.sh            # 安装为用户级 opencode skill（~/.config/opencode/skills/experience-report-repro/）
 ```
 
 `install.sh` 选项：
 
 | 选项 | 说明 |
 |---|---|
-| （无）| 复制到用户级 `~/.claude/skills/experience-report-repro/` |
+| （无）| 复制到用户级 `~/.config/opencode/skills/experience-report-repro/`（opencode 全局） |
 | `--link` | 软链安装，`git pull` 后自动更新 |
-| `--project <dir>` | 装为项目级 `<dir>/.claude/skills/experience-report-repro/` |
+| `--project <dir>` | 装为项目级 opencode skill `<dir>/.opencode/skills/experience-report-repro/` |
+| `--claude` | 改装到 Claude Code（`~/.claude/skills/experience-report-repro/`），可与 `--project` 叠加 |
 
-也可手动：`cp SKILL.md ~/.claude/skills/experience-report-repro/SKILL.md`。
+也可手动：`cp SKILL.md ~/.config/opencode/skills/experience-report-repro/SKILL.md`。
+
+> opencode 还会自动扫描 `~/.claude/skills/` 与 `~/.agents/skills/` 下的 `SKILL.md` 作为外部 skill，因此旧的 Claude Code 安装在 opencode 里也能直接生效。
 
 ## 使用
 
-在 Claude Code 里给出报告并指定阶段：
+在 opencode 里给出报告并指定阶段：
 
 ```
 这是 experience_report.json，请复现并核实 S3 编译阶段的失败结论。
