@@ -1,7 +1,6 @@
 ---
 name: experience-report-repro
-license: MIT
-description: "在固定昇腾NPU容器里复现JSON体验评估报告中【用户指定的某个阶段】，核实该阶段的痛点/失败结论是否成立。输入是体验agent生成的JSON体验评估报告(记录某开源项目S0搜索→S1环境准备→S2快速体验→S3开发编译→S4测试验证→S5贡献各阶段的命令轨迹actual_path.actions、痛点pain_points/failure_reason、评分)。用户指定复现哪个阶段(没问题、无需复现的阶段不指定)。核心机制:S1是环境基线——无论复现哪个阶段,都先严格按S1_SETUP阶段记录的actions把容器环境配置成与报告一致(照S1原样装,不自行补装/修正/对齐文档),其他阶段依赖这个环境;然后再逐条复现用户指定阶段的命令轨迹,捕获真实退出码、读业务输出,逐条核实该阶段痛点是否成立。复现环境固定用docker容器(镜像guoqiangqi/cogito,容器名cann_test_{使用者}_{项目名},挂载davinci设备与Ascend driver/firmware/npu-smi等)。全程独立,只依据被复现报告+本项目文档/源码,不读workspace其他项目结果;但工具链/依赖安装的非项目耦合通用踩坑可复用。触发:用户给出JSON体验报告并要求复现/验证/核实某阶段(S2快速体验/S3编译/S4测试等)的失败结论或痛点是否成立,或要求起干净NPU容器验证某CANN/昇腾项目某阶段流程是否如报告所述。"
+description: "在固定昇腾NPU容器里复现JSON体验评估报告中【用户指定的某个阶段】，核实该阶段的痛点/失败结论是否成立。输入是体验agent生成的JSON体验评估报告(记录某开源项目S0搜索→S1环境准备→S2快速体验→S3开发编译→S4测试验证→S5贡献各阶段的命令轨迹actual_path.actions、痛点pain_points/failure_reason、评分)。用户指定复现哪个阶段(没问题、无需复现的阶段不指定)。核心机制:S1是环境基线——无论复现哪个阶段,都先严格按S1_SETUP阶段记录的actions把容器环境配置成与报告一致(照S1原样装,不自行补装/修正/对齐文档),其他阶段依赖这个环境;然后再逐条复现用户指定阶段的命令轨迹,捕获真实退出码、读业务输出,逐条核实该阶段痛点是否成立。复现环境固定用docker容器(镜像guoqiangqi/cogito,容器名cann_test_ml_{项目名},挂载davinci设备与Ascend driver/firmware/npu-smi等)。全程独立,只依据被复现报告+本项目文档/源码,不读workspace其他项目结果;但工具链/依赖安装的非项目耦合通用踩坑可复用。触发:用户给出JSON体验报告并要求复现/验证/核实某阶段(S2快速体验/S3编译/S4测试等)的失败结论或痛点是否成立,或要求起干净NPU容器验证某CANN/昇腾项目某阶段流程是否如报告所述。"
 ---
 
 # 体验报告阶段复现与验证(昇腾NPU容器)
@@ -22,6 +21,7 @@ description: "在固定昇腾NPU容器里复现JSON体验评估报告中【用�
 - 换源只用于"让 S1 记的那条命令能跑通"(同一条命令、同一个包,换镜像源加速),不替换成别的命令或别的版本。
 - S1 环境配好、确认与报告一致后,再进入用户指定的阶段。顺序不能颠倒,不能跳过 S1。
 - "本次环境是否符合项目文档要求"留到分析阶段再判定,本阶段只对齐报告 S1。
+- **S1 内无前后依赖的命令可并行执行**(压缩装环境耗时,详见阶段 2「依赖分析与并行」):只把**确认互不依赖**的命令(如多个独立 `git clone` / 独立下载)聚成并行组用 `&`+`wait` 同时跑。并行**只为加速、不改命令/版本/包**;红线:**`apt` 之间绝不并行**(dpkg 锁)、**复合命令(`&&`/`;`/管道)整体不拆**、**`source`/`export` 之后依赖该环境的命令串行**;拿不准有无依赖就**不并行**。有依赖的命令照旧按报告顺序串行。
 
 ### 2. 只复现用户指定的那一个阶段
 
@@ -105,16 +105,17 @@ journey_map / phase_analysis   各阶段总分、pros/cons 汇总(辅助理解)
 
 ## 复现环境(固定 docker 容器)
 
-**复现一律在固定的昇腾 NPU docker 容器内进行**。容器名按项目命名:`cann_test_{使用者}_{项目名}`,镜像固定。
+**复现一律在固定的昇腾 NPU docker 容器内进行**。容器名按项目命名:`cann_test_ml_{项目名}`,镜像固定。
 
-**{使用者} 取法**:使用者自己的标识(如姓名拼音/缩写),用于区分不同人起的容器,例如 `zhangsan`。
-**{项目名} 取法**:取报告 `project.project_id` 中 `/` 后的部分(如 `cann/asc-tools` → `asc-tools`),与宿主机工作目录 `test_<项目名>` 保持一致。
+**{项目名} 取法**:取报告 `project.project_id` 中 `/` 后的部分(如 `cann/asc-tools` → `asc-tools`)。
+
+**{时间戳后缀} 取法**:从 JSON 报告**文件名**中提取,去掉 `Report-cann_<项目名>` 前缀和 `.json` 后缀,剩余部分即为时间戳后缀(如 `Report-cann_ge_20260619_0221.json` → `_20260619_0221`;`Report-cann_ops-nn_20260706_2206.json` → `_20260706_2206`)。完整工作目录名 = `test_<项目名><时间戳后缀>`(如 `test_ge_20260619_0221`、`test_ops-nn_20260706_2206`)。
 
 起容器命令(把 `{项目名}` 替换为实际项目名):
 
 ```bash
 docker run -dit \
-  --name cann_test_{使用者}_{项目名} \
+  --name cann_test_ml_{项目名} \
   --privileged \
   --net=host \
   --device /dev/davinci0 \
@@ -133,37 +134,38 @@ docker run -dit \
 ```
 
 - 镜像固定为 `guoqiangqi/cogito:202606150944`(如该 tag 拉取失败,先告知用户并确认替代 tag,**不要擅自换其它镜像**)。
-- 容器内执行统一用 `docker exec cann_test_{使用者}_{项目名} bash -lc '<命令>'`;脚本先在宿主机 `test_<项目名>/scripts/` 写好,再 `docker cp` 进容器执行,便于审视与复用。
-- **宿主机↔容器文件流转**:宿主机 `test_<项目名>/` 只放脚本/日志/报告;容器内按报告记录的路径操作(如 S1 里 git clone 到 `/tmp/devx_workspace` 就照此路径)。容器内日志用 `docker exec ... > 宿主机log` 或执行后 `docker cp` 取回 `test_<项目名>/log/`。
+- 容器内执行统一用 `docker exec cann_test_ml_{项目名} bash -lc '<命令>'`;脚本先在宿主机 `test_<项目名><时间戳后缀>/scripts/` 写好,再 `docker cp` 进容器执行,便于审视与复用。
+- **宿主机↔容器文件流转**:宿主机 `test_<项目名><时间戳后缀>/` 只放脚本/日志/报告;容器内按报告记录的路径操作(如 S1 里 git clone 到 `/tmp/devx_workspace` 就照此路径)。容器内日志用 `docker exec ... > 宿主机log` 或执行后 `docker cp` 取回 `test_<项目名><时间戳后缀>/log/`。
 - 起容器后先自检 NPU 可用:`npu-smi info`(应能看到设备)与 `ls /dev/davinci*`,确认设备挂载成功,再进入复现。
 
 ---
 
 ## 工作目录结构(每个项目独立)
 
-每复现一个项目,在 workspace 下建 `test_<项目名>/` 目录,**所有产物归档其中**,保持 workspace 根目录干净:
+每复现一个项目,在 workspace 下建 `test_<项目名><时间戳后缀>/` 目录(如 `test_ge_20260619_0221/`),**所有产物归档其中**,保持 workspace 根目录干净:
 
 ```
-test_<项目名>/
+test_<项目名><时间戳后缀>/
 ├── <项目名>/     # (可选)宿主机侧留存的项目源码副本;主复现在容器内 clone
 ├── scripts/      # 复现脚本(自检/装环境/复现等,docker cp 进容器执行)
 └── log/          # 体验报告(输入 JSON) + 过程日志 *.log + 结论报告 repro_report.md(输出)
 ```
 
 规矩:
-- 复现**第一步**建结构:`mkdir -p test_<项目名>/{scripts,log}`;把输入 JSON 报告放进 `log/`。
-- ★ **结论报告固定写入 `test_<项目名>/log/repro_report.md` 这一个文件**——复现结论对照表 + S1 环境复现 + 指定阶段复现 + 痛点核实判定 + 问题三分类归因 + 项目问题清单**全部汇总进它**;过程日志另存 `log/*.log`(如 `s1_setup.log`、`s3_build.log`)。**禁止**拆成多个 `.md` 或起别名。
-- 复现命令清单里的脚本路径一律用 `test_<项目名>/scripts/<脚本>`。
+- 复现**第一步**建结构:`mkdir -p test_<项目名><时间戳后缀>/{scripts,log}`;把输入 JSON 报告放进 `log/`。
+- ★ **结论报告固定写入 `test_<项目名><时间戳后缀>/log/repro_report.md` 这一个文件**——复现结论对照表 + S1 环境复现 + 指定阶段复现 + 痛点核实判定 + 问题三分类归因 + 项目问题清单**全部汇总进它**;过程日志另存 `log/*.log`(如 `s1_setup.log`、`s3_build.log`)。**禁止**拆成多个 `.md` 或起别名。
+- 复现命令清单里的脚本路径一律用 `test_<项目名><时间戳后缀>/scripts/<脚本>`。
 
 ### 脚本组织规范(命名 / 分批 / 内部结构)
 
 复现脚本按 **`s<阶段号>_<批次字母>.sh`** 命名、按逻辑分批,便于独立重跑、定位失败、控制超时:
 
-- **命名**:`s1_a.sh`、`s1_b.sh`、`s2_a.sh`、`s3_b.sh` ……"阶段号"对齐报告 step(S1/S2/S3),同阶段内按执行顺序用 `_a/_b/_c` 分批。自检、换源等一次性辅助操作可直接 `docker exec`,不必都落脚本。
+- **命名**:`s1_a.sh`、`s1_b.sh`、`s2_a.sh`、`s3_b.sh` ……"阶段号"对齐报告 step(S1/S2/S3),同阶段内按执行顺序用 `_a/_b/_c` 分批。**S1 内确认无依赖的命令聚成一个并行批 `s1_par_<批>.sh`**(如 `s1_par_a.sh`,内部结构见下),与串行批 `_a/_b` 区分。自检、换源等一次性辅助操作可直接 `docker exec`,不必都落脚本。
 - **分批粒度**(每批是一个**可独立重跑**的逻辑块):
   - **重操作单独成批**:大文件下载(CANN toolkit/ops 的 `.run` 包)、长时间编译(`bash build.sh`,常 200s+)、首次会失败的依赖脚本(`install_deps.sh`)各拆一批——便于设超时、失败时只重跑这一批。
   - **按依赖顺序排**:批次内命令前后依赖,批次间也顺序(S1 先于 S2/S3);**核心核实命令(build / `--run` / 精度验证)单独成批**,完整捕获业务输出。
   - 参考拆法:S1 ≈ clone+自检 / `install_deps` 首次 / 通用工具(pigz+googletest)/ CANN 下载安装 / 验证+`install_deps` 重跑+pip;目标阶段按"编译运行 / 目录探查 / 其它"分批。
+  - **S1 独立命令可聚成并行批**:S1 里互不依赖的命令(多个独立 git clone / 独立下载,依阶段 2 判据)聚成一个 `s1_par_<批>.sh` 同时跑,压缩耗时;重操作(大下载/长编译/易失败的 `install_deps`)仍各拆串行批。并行批内**单条失败不中断其它**(`set +e`),一条卡住时其它照跑。
 - **脚本内部结构**(每批统一):
   ```bash
   #!/usr/bin/env bash
@@ -178,6 +180,30 @@ test_<项目名>/
   cat /tmp/run.log                                         # 测试/核实类:完整业务输出(pass/failed/精度/golden)
   ```
   要点:`set +e` 逐条记录;每条 echo 行**标注报告 `success` 与 `duration`**(报告dur,取自报告该 action 的 `duration` 字段),便于和本次 `$SECONDS` 实测耗时对照、核实报告耗时类指标(如 `SDX_BUILD_TIME_SEC`);每条 `命令 > log 2>&1; echo RC=$?`(**绝不**接 `| tail`/`| head`,管道会伪装失败为成功——见核心执行规则 4);耗时命令用 `$SECONDS` 计时;**核实/测试类命令务必 `cat` 完整业务输出**(RC=0 ≠ 功能成功,要看 pass/failed、精度比对)。
+
+  **并行批内部结构**(`s1_par_<批>.sh`,把 S1 无依赖命令并行跑;红线:`apt` 间不并行、复合命令不拆、不 source/export 改共享态):
+  ```bash
+  #!/usr/bin/env bash
+  set +e                                            # 单条失败不中断其它(并行的价值)
+  cd /tmp/devx_workspace                            # 报告 S1 记的 clone 根路径(按需)
+  # source /usr/local/Ascend/cann/set_env.sh 2>/dev/null   # 若并行命令依赖,在此串行 source 一次
+  declare -A CMDS=(                                 # [tag]=报告 S1 原命令;命令内不得含 source/export/改 profile
+    [clone_repoA]='git clone --depth=1 -b <branch> <urlA> <pathA>'
+    [clone_repoB]='git clone --depth=1 -b <branch> <urlB> <pathB>'
+    [dl_toolkit]='wget -q -O /tmp/Ascend-toolkit.run <url>'
+  )
+  for tag in "${!CMDS[@]}"; do
+    ( S=$SECONDS; eval "${CMDS[$tag]}" >/tmp/par_${tag}.log 2>&1
+      echo $? >/tmp/par_${tag}.rc; echo $((SECONDS-S)) >/tmp/par_${tag}.dur ) &
+  done
+  wait
+  echo "===== [S1-par] 并行组结果(对照报告 success/报告dur) ====="
+  for tag in "${!CMDS[@]}"; do
+    echo "[$tag] RC=$(cat /tmp/par_${tag}.rc) 耗时=$(cat /tmp/par_${tag}.dur)s"
+    grep -iE "error|fail|fatal" /tmp/par_${tag}.log | head -3
+  done
+  ```
+  要点:每条独立 `/tmp/par_<tag>.log`+RC(不接管道伪装成败);`eval` 只跑报告 S1 原命令;`apt` 不要把多条塞进同一并行组互并(可与 git/pip/wget 跨类型同组);串行 `source`/`cd` 在并行启动**前**做一次,并行命令只读环境、各自独立产出。
 
 ---
 
@@ -201,19 +227,25 @@ test_<项目名>/
 
 #### 阶段 1｜起容器 + 自检
 
-1. `mkdir -p test_<项目名>/{scripts,log}`,输入 JSON 放 `log/`。
-2. 用上文固定 `docker run` 命令起 `cann_test_{使用者}_{项目名}`(已存在则先 `docker rm -f` 重建,保证干净)。
+1. `mkdir -p test_<项目名><时间戳后缀>/{scripts,log}`,输入 JSON 放 `log/`。
+2. 用上文固定 `docker run` 命令起 `cann_test_ml_{项目名}`(已存在则先 `docker rm -f` 重建,保证干净)。
 3. 自检:`npu-smi info`、`ls /dev/davinci*`、镜像内基础工具情况。自检结果记入 `log/container_check.log`。
 
 #### 阶段 2｜按 S1 配置环境(环境基线,严格按 S1 原样)
 
-**目标:让容器环境与报告 S1 记录一致,为后续阶段铺底。** 逐条按 S1 `actions` 顺序执行其 `git_clone`/`shell_exec`:
+**目标:让容器环境与报告 S1 记录一致,为后续阶段铺底。** 先对 S1 的 `git_clone`/`shell_exec` 做**依赖分析**——无依赖的聚成并行组并行跑、有依赖的按报告顺序串行跑(串行链照旧逐条执行):
 
-- **照 S1 原样执行**:clone 用 S1 记的 `url`/`branch`/`path`;装依赖用 S1 记的命令原样跑。**不补装、不修正、不对齐文档**。
+- **照 S1 原样执行**:clone 用 S1 记的 `url`/`branch`/`path`;装依赖用 S1 记的命令原样跑。**不补装、不修正、不对齐文档**。并行只动执行编排,不改命令/版本/包。
 - **换源仅限让 S1 那条命令能跑**:S1 记的 pip/apt/git 源拉不动时,换镜像源让**同一条命令、同一个包**跑起来;**不替换为文档里的其它命令/版本**。
-- 每条捕获真实退出码(`cmd > log 2>&1; echo RC=$?`),全过程记 `log/s1_setup.log`。
+- 每条捕获真实退出码(`cmd > log 2>&1; echo RC=$?`,**绝不接** `| tail`/`| head`),全过程记 `log/s1_setup.log`;并行组每条独立 log+RC 也汇总进来。
 - 全程记录:S1 报告声明装了什么 → 本次实际装成功什么、哪些与报告不一致(版本/缺失),供"环境一致性"判定。
 - 非项目耦合的通用安装踩坑(见文末踩坑库)可直接用,不在装环境上反复栽跟头。
+
+**依赖分析与并行(压缩 S1 耗时)**:扫描 S1 全部 `git_clone`/`shell_exec`,按下述判据+分级分成**并行组**与**串行链**——并行组写 `s1_par_<批>.sh`(`&`+`wait`,模板见「脚本组织规范」),串行链(下载→安装链、apt 互斥链、`source`/`export` 后的命令、复合命令)按原串行模板顺序跑。
+
+- **① 依赖判据**(一条命令可并入并行组 ⟺ 全部满足):不消费前序命令产出(不 `cd` 进前序 clone 的目录、不读前序下载的文件、不依赖前序装好的包/工具);不设置后续命令依赖的环境(不 `source set_env.sh`、不 `export` 后续要用的 PATH/LD_LIBRARY_PATH/Ascend*、不改 profile);不是"下载→解压/安装"链的一环(`wget xxx.run` 与 `bash xxx.run` 绑定串行);报告里本身就是复合命令(`&&`/`;`/管道/多行)时**整体作为一个单元不拆**。
+- **② 并行安全分级**(能否与同类型命令互相并行):`git clone`(不同仓库/路径) ✅ 放心并行;`wget`/`curl` 下载(不同 URL) ✅ 放心并行;`pip install`(不同 action) ⚠️ 保守串行(同一 site-packages 写 `.dist-info` 偶发竞争,报告本就一条 `pip install A B C` 则不拆);`apt`/`apt-get` ❌ **禁止互相并行**(dpkg 锁冲突必失败),但**可与跨类型**(git/pip/wget)并行。
+- **红线**:跨类型可并行(如一条 `apt` + 一条 `git clone` + 一条 `wget` 同时);同类型内按上表。命令间疑似有隐藏依赖(都写同一文件/都改同一 config)**保守归串行**;**不确定就不并行**——宁可少并行,不可污染 S1 环境对照。
 
 > S1 配完后,**不要**急着对齐项目文档;环境是否"符合项目要求"留到分析阶段判定。本阶段只对齐"报告 S1 记录"。
 
@@ -260,7 +292,7 @@ test_<项目名>/
 
 #### 阶段 8｜写结论报告
 
-汇总写入 `test_<项目名>/log/repro_report.md`(结构见下)。
+汇总写入 `test_<项目名><时间戳后缀>/log/repro_report.md`(结构见下)。
 
 ---
 
@@ -273,7 +305,7 @@ test_<项目名>/
 - 报告: <report_id> (生成于 <generated_at>)
 - 项目: <project_id> / repo <repo_url> / branch <branch>
 - 复现阶段: <step_id 阶段名>  | 环境基线: S1_SETUP
-- 容器: cann_test_{使用者}_<项目名>  | 镜像: guoqiangqi/cogito:202606150944
+- 容器: cann_test_ml_<项目名>  | 镜像: guoqiangqi/cogito:202606150944
 - 复现时间: <本次>
 
 ## 一、S1 环境基线复现(按报告 S1 严格配置)
@@ -318,6 +350,8 @@ test_<项目名>/
 - **`LD_LIBRARY_PATH` 缺失类报错**(找不到 driver/lib64 下 .so):按起容器命令设的值补齐(已在 `-e` 注入,容器内新 shell 用 `bash -lc` 或显式 export)。
 - **gcc/cmake/ccache 等基础工具缺失**:照 S1 报告记的命令装;apt 装不到目标版本时用通用方式(源码/通用 PPA),但版本区间以 S1 报告记录为准。
 - **Python 版本/包**:照 S1 记的 Python 与包版本装;通用包(如 numpy)装不上按通用换源处理。
+- **`apt` 不可互相并行(dpkg 锁)**:症状——多条 `apt`/`apt-get` 并行跑时报 `Could not get lock /var/lib/dpkg/lock`、`Resource temporarily unavailable`、或某条静默失败。通用解法:`apt` 命令之间**串行**(或合并成一条 `apt install A B C`);`apt` **可与跨类型命令**(git clone / pip / wget)并行。S1 并行批里不要把多条 `apt` 塞进同一组。
+- **容器内长耗时命令触发 docker exec 超时**:症状——`docker exec <容器> bash <脚本>` 跑编译/大下载/install 等长命令(几十秒以上)时被中断,报 `OCI runtime exec failed: timeout 30s for cmd`(docker daemon 对单次 exec 的超时,长输出重定向到文件、stdout 长时间静默时尤甚)。通用解法:用 `docker exec -d`(detached)在容器内后台启动(`docker exec -d <容器> bash -c 'bash /tmp/x.sh > /tmp/x.out 2>&1'`)并立即返回,宿主机再用**短查询**(`docker exec <容器> bash -c 'grep -q DONE /tmp/x.out && echo DONE || echo RUN'` / `tail`)轮询是否出现结束标记(脚本末尾 echo 一行如 `DONE`),规避 exec 超时。
 
 ### 沉淀新条目(复现中遇到通用问题时)
 > 格式:`### <症状关键词>` + `症状:` + `通用解法:` + `(仅适用:非项目耦合)`。判定不确定时,宁可不放,避免污染为项目耦合结论。
